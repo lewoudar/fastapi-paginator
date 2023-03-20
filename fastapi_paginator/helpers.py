@@ -3,6 +3,7 @@ import typing
 from cryptography.fernet import Fernet
 from sqlalchemy import Select, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import noload
 
 from .middlewares import request_object
 from .models import db, Todo
@@ -56,7 +57,7 @@ class PagePaginator:
             'count': await self._get_total_count(),
             'next_page': self._get_next_page(),
             'previous_page': self._get_previous_page(),
-            'items': [todo for todo in await self.session.scalars(self.query.slice(self.offset, self.limit))]
+            'items': [todo for todo in await self.session.scalars(self.query.limit(self.limit).offset(self.offset))]
         }
 
     def _get_number_of_pages(self, count: int) -> int:
@@ -154,8 +155,11 @@ class CursorPaginator:
 async def paginate_limit_offset(query: Select, limit: int, offset: int) -> dict:
     async with db.Session() as session:
         return {
-            'count': await session.scalar(select(func.count()).select_from(query.subquery())),
-            'items': [todo for todo in await session.scalars(query.slice(offset, limit))]
+            # inspiration for this query comes from fastapi-pagination package
+            'count': await session.scalar(
+                select(func.count()).select_from(query.order_by(None).options(noload('*')).subquery())
+            ),
+            'items': [todo for todo in await session.scalars(query.limit(limit).offset(offset))]
         }
 
 
